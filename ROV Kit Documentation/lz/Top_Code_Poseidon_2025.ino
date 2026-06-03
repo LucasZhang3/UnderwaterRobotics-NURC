@@ -67,10 +67,11 @@ extern "C" uint32_t set_arm_clock(uint32_t frequency);
 #define LOOP_PERIOD_US 50000UL
 #define DPAD_AXIS_STEP 0.03f
 
-#define FORWARD_SLEW_RATE 2.5f
-#define TURN_SLEW_RATE 3.0f
-#define VERTICAL_SLEW_RATE 2.0f
-#define STRAFE_SLEW_RATE 2.5f
+#define SLOW_MODE_SCALE 0.4f
+#define ACCEL_RATE_NORMAL 2.5f
+#define DECEL_RATE_NORMAL 6.0f
+#define ACCEL_RATE_SLOW 1.0f
+#define DECEL_RATE_SLOW 3.0f
 
 #define RECEIVE_SYNC_TIMEOUT_LOOPS 10000
 #define RECEIVE_BODY_TIMEOUT_LOOPS 100
@@ -135,6 +136,12 @@ bool hid_driver_active[CNT_DEVICES] = {false};
 char namebuf[MSG_BUFFER_LEN] = {0};
 bool gamepadConnected = false;
 bool gamepadReady = false;
+bool slow_mode_enabled = false;
+bool lbRbComboWasPressed = false;
+bool debugInputInitialized = false;
+bool lastDebugSlowMode = false;
+uint32_t lastDebugButtons = 0;
+int lastDebugAxes[6];
 
 // DEPRECATED — retained for reference; not used in current production build.
 int user_axis[64];
@@ -146,7 +153,6 @@ uint32_t buttons_prev = 0;
 
 unsigned long loopPeriod = LOOP_PERIOD_US;
 unsigned long nextLoopMicros = 0;
-unsigned long nextDebugMicros = 0;
 unsigned long lastSlewMicros = 0;
 
 char inString[MSG_BUFFER_LEN];
@@ -202,20 +208,41 @@ float motScale = MOTOR_CMD_SCALE;
 // 9. DEBUG OUTPUT
 //==============================================================================
 
-void print_controller_debug(void) {
+void print_controller_input_debug_if_changed(void) {
+  bool changed = !debugInputInitialized || butts != lastDebugButtons || slow_mode_enabled != lastDebugSlowMode;
+  for (uint8_t i = 0; i < 6; i++) {
+    if (!debugInputInitialized || axes[i] != lastDebugAxes[i]) {
+      changed = true;
+    }
+  }
+  if (!changed) return;
+
+  debugInputInitialized = true;
+  lastDebugButtons = butts;
+  lastDebugSlowMode = slow_mode_enabled;
+  for (uint8_t i = 0; i < 6; i++) {
+    lastDebugAxes[i] = axes[i];
+  }
+
+  if (Serial.availableForWrite() < 96) return;
   Serial.printf(
-    "LX:%6.3f LY:%6.3f RX:%6.3f RY:%6.3f LT:%5.3f RT:%5.3f BTN:%04lX "
-    "M:%02X %02X %02X %02X %02X %02X P:%02X %02X\n",
-    analogs[LJoyX], analogs[LJoyY], analogs[RJoyX], analogs[RJoyY],
-    analogs[LTrig], analogs[RTrig], butts,
-    motors[0], motors[1], motors[2], motors[3], motors[4], motors[5],
-    servos[0], servos[1]
+    "MODE:%s BTN:%04lX LB:%d RB:%d A:%d B:%d X:%d Y:%d AX:%d,%d,%d,%d,%d,%d\n",
+    slow_mode_enabled ? "SLOW" : "NORM",
+    butts,
+    buttons[LButton], buttons[RButton],
+    buttons[AButton], buttons[BButton], buttons[XButton], buttons[YButton],
+    axes[0], axes[1], axes[2], axes[3], axes[4], axes[5]
   );
 }
 
 //==============================================================================
 // 10. LCD — TELEMETRY DISPLAY
 //==============================================================================
+
+void display_slow_mode_status(void) {
+  lcd.setCursor(0, 2);
+  lcd.print(slow_mode_enabled ? "Slow Mode: ON       " : "Slow Mode: OFF      ");
+}
 
 /*
  * Purpose:
@@ -240,9 +267,7 @@ void display_all_telems(void) {
   sprintf(buf, "Depth    %5.2f Feet", telems[5]);
   lcd.setCursor(0, 1);
   lcd.print(buf);
-  sprintf(buf, "LED temp %5.1f C", telems[3]);
-  lcd.setCursor(0, 2);
-  lcd.print(buf);
+  display_slow_mode_status();
   sprintf(buf, "H2O temp %5.1f C", telems[1]);
   lcd.setCursor(0, 3);
   lcd.print(buf);
@@ -382,18 +407,43 @@ float trigScale(int stick) {
 
 /*
  * Purpose:
- *   Limit how quickly one normalized command can move toward a target.
+ *   Limit how quickly one normalized motion command can move toward a target.
  * Inputs:
- *   current, target — normalized axis values; ratePerSecond — max units/sec; dtSeconds.
+ *   current, target — normalized axis values; accel/decel rates in units/sec.
  * Outputs:
  *   Rate-limited command value.
  */
-float limitRateOfChange(float current, float target, float ratePerSecond, float dtSeconds) {
-  float maxStep = ratePerSecond * dtSeconds;
+float limitRateOfChange(float current, float target, float accelRate, float decelRate, float dtSeconds) {
+  float rate = accelRate;
+  if ((current > 0.0f && target < current) || (current < 0.0f && target > current)) {
+    rate = decelRate;
+  }
+  if ((current > 0.0f && target < 0.0f) || (current < 0.0f && target > 0.0f)) {
+    target = 0.0f;
+    rate = decelRate;
+  }
+  float maxStep = rate * dtSeconds;
   float delta = target - current;
   if (delta > maxStep) return current + maxStep;
   if (delta < -maxStep) return current - maxStep;
   return target;
+}
+
+void setSlowModeLed(void) {
+  digitalWrite(LED_BUILTIN, slow_mode_enabled ? HIGH : LOW);
+  display_slow_mode_status();
+}
+
+void updateSlowModeToggle(void) {
+  bool lbRbComboPressed = buttons[LButton] && buttons[RButton];
+  if (lbRbComboPressed && !lbRbComboWasPressed) {
+    slow_mode_enabled = !slow_mode_enabled;
+    lbRbComboWasPressed = true;
+    setSlowModeLed();
+  }
+  if (!lbRbComboPressed) {
+    lbRbComboWasPressed = false;
+  }
 }
 
 /*
@@ -403,10 +453,14 @@ float limitRateOfChange(float current, float target, float ratePerSecond, float 
  *   Camera tilt, LED brightness, and gripper remain direct for task precision.
  */
 void applySlewRate(float dtSeconds) {
-  analogs[LJoyY] = limitRateOfChange(analogs[LJoyY], requestedAnalogs[LJoyY], FORWARD_SLEW_RATE, dtSeconds);
-  analogs[RJoyX] = limitRateOfChange(analogs[RJoyX], requestedAnalogs[RJoyX], TURN_SLEW_RATE, dtSeconds);
-  analogs[RJoyY] = limitRateOfChange(analogs[RJoyY], requestedAnalogs[RJoyY], VERTICAL_SLEW_RATE, dtSeconds);
-  analogs[LJoyX] = limitRateOfChange(analogs[LJoyX], requestedAnalogs[LJoyX], STRAFE_SLEW_RATE, dtSeconds);
+  float accelRate = slow_mode_enabled ? ACCEL_RATE_SLOW : ACCEL_RATE_NORMAL;
+  float decelRate = slow_mode_enabled ? DECEL_RATE_SLOW : DECEL_RATE_NORMAL;
+  float scale = slow_mode_enabled ? SLOW_MODE_SCALE : 1.0f;
+
+  analogs[LJoyY] = limitRateOfChange(analogs[LJoyY], requestedAnalogs[LJoyY] * scale, accelRate, decelRate, dtSeconds);
+  analogs[RJoyX] = limitRateOfChange(analogs[RJoyX], requestedAnalogs[RJoyX] * scale, accelRate, decelRate, dtSeconds);
+  analogs[RJoyY] = limitRateOfChange(analogs[RJoyY], requestedAnalogs[RJoyY] * scale, accelRate, decelRate, dtSeconds);
+  analogs[LJoyX] = limitRateOfChange(analogs[LJoyX], requestedAnalogs[LJoyX] * scale, accelRate, decelRate, dtSeconds);
 }
 
 /*
@@ -441,6 +495,8 @@ void translate_response_to_controls() {
       for (int i = 0; i < 16; i++) {
         buttons[i] = (butts >> i) & 0x0001;
       }
+      updateSlowModeToggle();
+      print_controller_input_debug_if_changed();
       requestedAnalogs[LJoyX] = joyScale(axes[0]);
       requestedAnalogs[LJoyY] = joyScale(axes[1]);
       requestedAnalogs[RJoyX] = joyScale(axes[2]);
@@ -469,7 +525,6 @@ void translate_response_to_controls() {
     lcd.print("Gamepad Ready");
     lcd.setCursor(0, 1);
     lcd.print(namebuf);
-    Serial.println("Gamepad Ready");
   }
 }
 
@@ -631,6 +686,8 @@ void setup() {
   if (F_CPU_ACTUAL >= CPU_CLOCK_LIMIT_HZ) {
     set_arm_clock(CPU_CLOCK_LIMIT_HZ);
   }
+  pinMode(LED_BUILTIN, OUTPUT);
+  setSlowModeLed();
 
   motDirs[GripperMot] = GripperMotDir;
   motDirs[LUpDownMot] = LUpDownMotDir;
@@ -692,14 +749,9 @@ void loop() {
     translate_controls_to_commands();
     build_command_msg(command_msg);
     Serial1.print(command_msg);
-    if (gamepadReady && micros() > nextDebugMicros) {
-      nextDebugMicros = micros() + 250000UL;
-      print_controller_debug();
-    }
   }
 
   if (gotInString) {
-    Serial.print(reply_msg);
     gotInString = false;
     parse_reply_msg(reply_msg);
     display_all_telems();
