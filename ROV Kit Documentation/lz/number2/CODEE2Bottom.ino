@@ -52,8 +52,17 @@
 #define MOTOR5_PIN 7
 
 // SERVO1 is Camera SERVO2 is Gripper
-#define SERVO1_PIN 17
-#define SERVO2_PIN 21
+#define SERVO1_PIN 21
+
+#define N_MOTOR1_PIN 3
+#define N_MOTOR2_PIN 4
+#define N_MOTOR3_PIN 5
+#define N_MOTOR4_PIN 6
+#define N_MOTOR5_PIN 7
+
+// SERVO1 is Camera SERVO2 is Gripper
+#define N_SERVO1_PIN 17
+#define N_SERVO2_PIN 21
 
 // DIM is light
 #define DIM_PIN 22
@@ -94,9 +103,11 @@ Servo servo2;
 char *inPtr;
 bool gotInString = false;
 
-// int grip, grip1, grip2 = 0;
+int grip, grip1, grip2 = 0;
 
 int msg_count = 0;
+
+bool robotToggleEnabled = 0;
 
 // DEPRECATED — retained for reference; not used in current production build.
 float depthMeters;
@@ -221,6 +232,38 @@ void build_reply_msg(char *msg) {
   *msg = '\0';
 }
 
+void detachAll()
+{
+  motor1.detach();
+  motor2.detach();
+  motor3.detach();
+  motor4.detach();
+  motor5.detach();
+  servo1.detach();
+  servo2.detach();
+}
+
+void attachOld()
+{
+  motor1.attach(MOTOR1_PIN);
+  motor2.attach(MOTOR2_PIN);
+  motor3.attach(MOTOR3_PIN);
+  motor4.attach(MOTOR4_PIN);
+  motor5.attach(MOTOR5_PIN);
+  servo1.attach(SERVO1_PIN);
+}
+
+void attachNew()
+{
+  motor1.attach(N_MOTOR1_PIN);
+  motor2.attach(N_MOTOR2_PIN);
+  motor3.attach(N_MOTOR3_PIN);
+  motor4.attach(N_MOTOR4_PIN);
+  motor5.attach(N_MOTOR5_PIN);
+  servo1.attach(N_SERVO1_PIN);
+  servo2.attach(N_SERVO2_PIN);
+}
+
 //==============================================================================
 // 7. ACTUATOR CONTROL — PWM SCALING AND OUTPUTS
 //==============================================================================
@@ -291,8 +334,8 @@ void setup() {
   Serial.begin(SERIAL_BAUD);
   Serial1.begin(SERIAL_BAUD);
   Serial1.transmitterEnable(TXE_PIN);
-  // pinMode(GRIP1_PIN, OUTPUT);
-  // pinMode(GRIP2_PIN, OUTPUT);
+  pinMode(GRIP1_PIN, OUTPUT);
+  pinMode(GRIP2_PIN, OUTPUT);
   pinMode(DIM_PIN, OUTPUT);
   analogReadResolution(12);
 
@@ -302,7 +345,6 @@ void setup() {
   motor4.attach(MOTOR4_PIN);
   motor5.attach(MOTOR5_PIN);
   servo1.attach(SERVO1_PIN);
-  servo1.attach(SERVO2_PIN);
 
   stop_all_motors();
   delay(ESC_INIT_DELAY_MS);
@@ -349,24 +391,42 @@ void loop() {
       st = parse_command_msg(command_msg, motors, servos);
 
       if (!st) {
+        robotToggleEnabled = servos
+        if (servos[0] < 50) {
+          robotToggleEnabled = 0;
+        } else {
+          robotToggleEnabled = 1;
+        }
+        if (!robotToggleEnabled) {
+          // Old Robot
+          detachAll();
+          attachOld();
+  
+          grip = motors[0] - PWM_CMD_CENTER;
+          if (grip < 0) {
+            grip2 = GRIP_BRAKE_PWM + grip * 2;
+            grip1 = GRIP_BRAKE_PWM;
+          } else {
+            grip1 = GRIP_BRAKE_PWM - grip * 2;
+            grip2 = GRIP_BRAKE_PWM;
+          }
+          analogWrite(GRIP1_PIN, grip1);
+          analogWrite(GRIP2_PIN, grip2);
+        } else {
+          // New Robot
+          detachAll();
+          attachNew();
+
+          servo2.writeMicroseconds(servo_scale(servos[2]));
+        }
+
         motor1.writeMicroseconds(motor_scale(motors[1]));
         motor2.writeMicroseconds(motor_scale(motors[2]));
         motor3.writeMicroseconds(motor_scale(motors[3]));
         motor4.writeMicroseconds(motor_scale(motors[4]));
         motor5.writeMicroseconds(motor_scale(motors[5]));
         servo1.writeMicroseconds(servo_scale(servos[1]));
-        servo2.writeMicroseconds(servo_scale(servos[2])); // idk rn
 
-        /*grip = motors[0] - PWM_CMD_CENTER;
-        if (grip < 0) {
-          grip2 = GRIP_BRAKE_PWM + grip * 2;
-          grip1 = GRIP_BRAKE_PWM;
-        } else {
-          grip1 = GRIP_BRAKE_PWM - grip * 2;
-          grip2 = GRIP_BRAKE_PWM;
-        }
-        analogWrite(GRIP1_PIN, grip1);
-        analogWrite(GRIP2_PIN, grip2);*/
         analogWrite(DIM_PIN, servos[0]);
       }
     }
