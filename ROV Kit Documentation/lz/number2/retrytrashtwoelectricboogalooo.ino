@@ -95,7 +95,7 @@ extern "C" uint32_t set_arm_clock(uint32_t frequency); // required prototype
 // max number of motor control channels in command message
 #define NMOTORS 6
 // max number of servo control channels in command message
-#define NSERVOS 3
+#define NSERVOS 4
 // max number of switch channels in command message
 #define NSWITCHES 2
 // max number of analog channels in reply message
@@ -871,8 +871,10 @@ void translate_controls_to_commands() {
   if (!robot_toggle_enabled) {
     motors[GripperMot] = Pwm0 + lims((int)(Gripper  *motDirs[GripperMot]*motScale));
     servos[2] = 0;
+    servos[3] = 0;
   } else {
     motors[GripperMot] = 0;
+    servos[3] = 80;
     servos[2] = Pwm0 + lims((int)(Gripper * motDirs[GripperMot] * motScale)); //  gripper servo
   }
   
