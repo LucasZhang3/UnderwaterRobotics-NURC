@@ -28,7 +28,6 @@ Revision history
 2024-05-31 DF  Fixed USB declarations to compile with TeensyDuino 1.59
 2024-06-02 DF  Ver 1.20 - Added USB ID display at startup
 2024-06-09 DF  Ver 1.21 - added temp readout enable to Y button
-2026-06-04 DF  Ver 1.30 - Added slew and slow mode toggle
 
 Known bugs:
 
@@ -116,11 +115,20 @@ extern "C" uint32_t set_arm_clock(uint32_t frequency); // required prototype
 
 
 
-#define SLOW_MODE_SCALE 0.4
-#define ACCEL_RATE_NORMAL 2.5
-#define DECEL_RATE_NORMAL 6.0
-#define ACCEL_RATE_SLOW 1.0
-#define DECEL_RATE_SLOW 3.0
+#define SLOW_MODE_SCALE 0.4          // Multiplies motion axes in slow mode for precision driving.
+#define ACCEL_RATE_NORMAL 2.5       // Normal-mode max joystick ramp-up rate, normalized units/sec.
+#define DECEL_RATE_NORMAL 6.0       // Normal-mode ramp-down rate for quick stopping.
+#define ACCEL_RATE_SLOW 1.0         // Slow-mode max joystick ramp-up rate.
+#define DECEL_RATE_SLOW 3.0         // Slow-mode ramp-down rate; still faster than acceleration.
+#define VERTICAL_DEADBAND 0.05      // Released vertical-stick threshold in normalized units.
+#define DEPTH_HOLD_ACTIVATION_DELAY_MS 500 // Delay after stick release before capturing target depth.
+#define DEPTH_HOLD_DEADBAND 0.15  // Feet of allowed depth error before PID correction begins.
+#define MAX_VERTICAL_PID_OUTPUT 0.35 // Maximum automatic vertical command from depth hold.
+#define DEPTH_KP 0.45               // Proportional correction for depth error in feet.
+#define DEPTH_KI 0.02               // Integral correction for persistent depth error.
+#define DEPTH_KD 0.10               // Derivative damping for depth-rate changes.
+#define DEPTH_UNITS_SCALE 1.0  // Depth telemetry is already scaled to feet by telScale[5].
+#define DEPTH_FILTER_ALPHA 0.10     // Low-pass filter weight for new depth samples.
 // ----------------- Motor configuration ------------------ //
 
 // ESC to motor wiring as described in instructions
@@ -264,6 +272,16 @@ int switches[NSWITCHES];  // on/off switches based on buttons held down
 
 bool slow_mode_enabled = false;
 bool lbRbComboWasPressed = false;
+bool depthHoldEnabled = false;
+bool verticalStickReleased = false;
+bool depthTelemetryValid = false;
+unsigned long verticalReleaseMillis = 0;
+float currentDepthMeters = 0.0;  // Current depth in feet; name retained to avoid wider code churn.
+float filteredDepthMeters = 0.0; // Filtered depth in feet for display and PID.
+float targetDepthMeters = 0.0;   // Captured hold target depth in feet.
+float depthIntegral = 0.0;
+float previousDepthError = 0.0;
+float depthPidOutput = 0.0;
 // The ROV messages get put here
 char command_msg[100];  // command message, newline, 0
 char reply_msg[100];    // reply message, newline, 0
@@ -288,39 +306,62 @@ float telScale[NVOLTS] = {  11.00,  256./3.3,  8.00,  70.00,  71.00, 90};
 
 /*
 Purpose:
-Formats and displays decoded telemetry values on the operator LCD.
+Displays operator mode state on LCD line 0.
 Inputs:
-Global volts[] array populated by parse_reply_msg().
+Global slow_mode_enabled and depthHoldEnabled flags.
 Outputs:
-Updates the four-line LCD display.
+Writes slow-mode and depth-hold state to the LCD.
+Side Effects:
+Updates the operator display only.
+Dependencies:
+LCD must be initialized in setup().
+Notes:
+Keeps mode state visible without changing command packets or control timing.
+*/
+void display_mode_status(void) {
+  sprintf(buf, "SLOW:%3s HOLD:%3s", slow_mode_enabled ? "ON" : "OFF", depthHoldEnabled ? "ON" : "OFF");
+  lcd.setCursor(0, 0);
+  lcd.print(buf);
+  lcd.print("   ");
+}
+
+/*
+Purpose:
+Formats telemetry and depth-hold status for the 4-line operator LCD.
+Inputs:
+volts[] telemetry values and filtered depth-hold state.
+Outputs:
+Line 0: slow/hold state; line 1: battery; line 2: depth in feet; line 3: PID error/status.
 Side Effects:
 Writes to LCD hardware.
 Dependencies:
-Telemetry scaling constants must match bottom-side sensor wiring.
+parse_reply_msg() must update volts[] and filtered depth before display refresh.
 Notes:
-This function also owns the visible slow-mode status line in the current source.
+Depth and PID error are shown in feet.
 */
 void display_all_telems(void) {
   float telems[NVOLTS];
   for (int i=0;i<NVOLTS;i++) {
     telems[i] = (volts[i] - telZeros[i]) * telScale[i];
   }
-  sprintf(buf, "Battery  %5.1f V", telems[0]);
-  lcd.setCursor(0, 0);
-  lcd.print(buf);
-  sprintf(buf, "Depth    %5.2f Feet", telems[5]);
+  display_mode_status();
+  sprintf(buf, "Battery: %5.1fV", telems[0]);
   lcd.setCursor(0, 1);
   lcd.print(buf);
+  lcd.print("    ");
+  sprintf(buf, "Depth:%6.2f ft", filteredDepthMeters);
   lcd.setCursor(0, 2);
-  lcd.print(slow_mode_enabled ? "SLOW MODE: ON      " : "SLOW MODE: OFF     ");
-  sprintf(buf, "H2O temp %5.1f C", telems[1]);
+  lcd.print(buf);
+  lcd.print("    ");
+  sprintf(buf, "PID:%+5.2f ft %3s", targetDepthMeters - filteredDepthMeters, depthHoldEnabled ? "ON" : "OFF");
   lcd.setCursor(0, 3);
   lcd.print(buf);
+  lcd.print("   ");
 }
 
 // ------------------- ROV message I/O ------------------ //
 
-// !!! This needs to be redone in a non-blocking manner. 
+// Legacy helper below is blocking; the active main loop uses non-blocking Serial1 reads.
 
 // get a message from ROV serial port
 // returns 0 if OK, 1 if timeout error
@@ -438,10 +479,17 @@ int parse_reply_msg(char *msg) {
 
   if (*msg++ != '\n') return 1; 
   if (*msg++ != '\0') return 1; 
+  currentDepthMeters = (volts[5] - telZeros[5]) * telScale[5] * DEPTH_UNITS_SCALE;
+  if (!depthTelemetryValid) {
+    filteredDepthMeters = currentDepthMeters;
+  } else {
+    filteredDepthMeters = filteredDepthMeters * (1.0 - DEPTH_FILTER_ALPHA) + currentDepthMeters * DEPTH_FILTER_ALPHA;
+  }
+  depthTelemetryValid = true;
   return 0;
 }
 
-// ----------------- translation code -------------------- //
+// ----------------- CONTROLLER INPUT, SLEW LIMITING, AND DEPTH HOLD -------------------- //
 
 // Remove deadband slop from joysticks
 // And scale joystick value from 16 bit int to float for motor math
@@ -507,7 +555,7 @@ void updateSlowModeToggle(void) {
     slow_mode_enabled = !slow_mode_enabled;
     lbRbComboWasPressed = true;
     lcd.setCursor(0, 2);
-    lcd.print(slow_mode_enabled ? "SLOW MODE: ON      " : "SLOW MODE: OFF     ");
+    display_mode_status();
   }
   if (!lbRbComboPressed) {
     lbRbComboWasPressed = false;
@@ -525,7 +573,145 @@ void applySlewRate(float dtSeconds) {
   analogs[RJoyY] = limitRateOfChange(analogs[RJoyY], requestedAnalogs[RJoyY] * scale, accelRate, decelRate, dtSeconds);
 }
 
-// read gamepad and populate the control variables with current readings
+/*
+Purpose:
+Limits a floating-point value to a safe numeric range.
+Inputs:
+Value to clamp, minimum allowed value, maximum allowed value.
+Outputs:
+Clamped floating-point value.
+Side Effects:
+None.
+Dependencies:
+Used by depth-hold PID output limiting.
+Notes:
+Keeps PID output bounded before it is applied to vertical motion command.
+*/
+float constrainFloat(float val, float minVal, float maxVal) {
+  if (val < minVal) return minVal;
+  if (val > maxVal) return maxVal;
+  return val;
+}
+
+/*
+Purpose:
+Reports whether USBHost currently sees a joystick/HID controller connection.
+Inputs:
+USB driver active-state arrays maintained by PrintDeviceListChanges().
+Outputs:
+True when a controller-like USB device is active.
+Side Effects:
+None.
+Dependencies:
+myusb.Task() and PrintDeviceListChanges() must run regularly.
+Notes:
+Depth hold is disabled when the controller is not connected.
+*/
+bool joystickConnected(void) {
+  return driver_active[1] || driver_active[2] || driver_active[3] || driver_active[4] ||
+         hid_driver_active[0] || hid_driver_active[1] || hid_driver_active[2] || hid_driver_active[3];
+}
+
+/*
+Purpose:
+Clears accumulated PID state for depth hold.
+Inputs:
+None.
+Outputs:
+Resets integral, previous error, and current PID output globals.
+Side Effects:
+Depth-hold controller restarts without stale accumulated correction.
+Dependencies:
+Called whenever manual pilot control takes priority or a new target is captured.
+Notes:
+Prevents integral windup from fighting the pilot after mode changes.
+*/
+void resetDepthHoldPid(void) {
+  depthIntegral = 0.0;
+  previousDepthError = 0.0;
+  depthPidOutput = 0.0;
+}
+
+/*
+Purpose:
+Immediately exits depth hold and returns vertical control to the pilot.
+Inputs:
+None.
+Outputs:
+Clears hold-enable state and release tracking.
+Side Effects:
+Updates LCD mode status when hold was active.
+Dependencies:
+Manual joystick movement and controller disconnect both call this path.
+Notes:
+This function is the manual-override path for depth hold assist.
+*/
+void disableDepthHold(void) {
+  if (depthHoldEnabled) {
+    depthHoldEnabled = false;
+    display_mode_status();
+  }
+  verticalStickReleased = false;
+  resetDepthHoldPid();
+}
+
+/*
+Purpose:
+Runs the depth-hold assist state machine and PID correction for vertical motion.
+Inputs:
+Elapsed loop time in seconds and filtered depth telemetry in feet.
+Outputs:
+May replace analogs[RJoyY] with a bounded PID vertical command.
+Side Effects:
+Captures target depth, updates hold state, accumulates PID terms, and refreshes LCD status.
+Dependencies:
+Valid depth telemetry, connected controller, and released vertical stick.
+Notes:
+Pilot vertical stick movement always disables hold immediately; no packet format changes occur.
+*/
+void updateDepthHoldAssist(float dtSeconds) {
+  // Do not allow automatic vertical output without a live controller and valid depth data.
+  if (!joystickConnected() || !depthTelemetryValid) {
+    disableDepthHold();
+    return;
+  }
+
+  // Pilot stick movement has priority over assist mode and disables hold immediately.
+  if (abs(requestedAnalogs[RJoyY]) > VERTICAL_DEADBAND) {
+    disableDepthHold();
+    return;
+  }
+
+  // First loop after stick release starts the activation timer but does not capture depth yet.
+  if (!verticalStickReleased) {
+    verticalStickReleased = true;
+    verticalReleaseMillis = millis();
+    resetDepthHoldPid();
+    return;
+  }
+
+  // After the delay, capture the current filtered depth as the hold target.
+  if (!depthHoldEnabled) {
+    if (millis() - verticalReleaseMillis < DEPTH_HOLD_ACTIVATION_DELAY_MS) return;
+    targetDepthMeters = filteredDepthMeters;
+    depthHoldEnabled = true;
+    resetDepthHoldPid();
+    display_mode_status();
+  }
+
+  // Signed error preserves whether the ROV is above or below the target depth.
+  float error = targetDepthMeters - filteredDepthMeters;
+  if (abs(error) < DEPTH_HOLD_DEADBAND) error = 0.0;
+  depthIntegral += error * dtSeconds;
+  float derivative = 0.0;
+  if (dtSeconds > 0.0) derivative = (error - previousDepthError) / dtSeconds;
+  depthPidOutput = error * DEPTH_KP + depthIntegral * DEPTH_KI + derivative * DEPTH_KD;
+  // Limit automatic vertical command so depth hold cannot demand full thrust.
+  depthPidOutput = constrainFloat(depthPidOutput, -MAX_VERTICAL_PID_OUTPUT, MAX_VERTICAL_PID_OUTPUT);
+  previousDepthError = error;
+  analogs[RJoyY] = depthPidOutput;
+}
+// Read gamepad input, update pilot command state, and apply assist-mode command shaping.
 /*
 Purpose:
 Reads USB gamepad state and updates normalized pilot command variables.
@@ -567,7 +753,7 @@ void translate_response_to_controls() {
         buttons[i] = (butts>>i)&0x0001;
       }
   
-      // XBox One stick reading, scales to -1.0 .. +1.0 range
+      // Convert raw Xbox stick axes into requested normalized commands; motion axes are slewed later.
       updateSlowModeToggle();
       requestedAnalogs[LJoyX] = joyScale(axes[0]);
       requestedAnalogs[LJoyY] = joyScale(axes[1]);
@@ -576,7 +762,7 @@ void translate_response_to_controls() {
       analogs[LTrig] = trigScale(axes[3]);
       analogs[RTrig] = trigScale(axes[4]);
   
-        // calculate virtual stick position for each synthesized axis from button pair
+        // Update synthesized D-pad/button axes used for LED dimming and camera tilt.
       for (int i=6; i<NANALOG; i++) {
         float val = analogs[i];  // get current position
         if (buttons[up_button[i]]) val += button_inc;
@@ -586,7 +772,7 @@ void translate_response_to_controls() {
         // if (buttons[zero_button[i]]) val = 0.;  // reset to midpoint
         analogs[i] = val;   // update it as calculated
       }
-      // use X and Y buttons as on/off controls (for temp reading)
+      // Preserve existing switch packet behavior for the Y/B button channels.
       switches[0] = buttons[YButton];
       switches[1] = buttons[BButton];
       
@@ -601,9 +787,10 @@ void translate_response_to_controls() {
   if (sawGamepadFrame) {
     applySlewRate(dtSeconds);
   }
+  updateDepthHoldAssist(dtSeconds);
 }
 
-// rescale the controls to the motors and servos
+// Convert shaped controller commands into motor and servo command bytes.
 float motScale = 128.;
 
 // make sure the numbers don't overflow the 2 digit hex range
@@ -675,7 +862,7 @@ void translate_controls_to_commands() {
 }
 
 
-// build a command string for ROV
+// Build the RS-485 command packet without changing the existing protocol field order.
 /*
 Purpose:
 Builds the top-side RS-485 command packet from current motor, servo, and switch command arrays.
@@ -835,7 +1022,7 @@ motDirs[StrafeMot]  = StrafeMotDir;
   lcd.setCursor(0, 0);
   lcd.print("Seeking Gamepad");   // the USB ID of gamepad will display below this
   lcd.setCursor(0, 2);
-  lcd.print("SLOW MODE: OFF     ");
+  lcd.print("SLOW:OFF HOLD:OFF  ");
 // make the joystick host USB port 
   myusb.begin();
 // initialize all motors and servos to safe position
@@ -851,17 +1038,17 @@ motDirs[StrafeMot]  = StrafeMotDir;
 
 /*
 Purpose:
-Runs the bottom-side control loop: sample telemetry, receive command packets, reply, parse, and apply actuator outputs.
+Runs the top-side operator control loop.
 Inputs:
-RS-485 bytes from Serial1 and analog sensor readings.
+USB controller state and RS-485 telemetry bytes from the ROV.
 Outputs:
-Telemetry packets and actuator command pulses/PWM.
+RS-485 command packets, Serial debug messages, and LCD telemetry/status updates.
 Side Effects:
-Updates thrusters, camera servo, gripper outputs, LED PWM, and debug Serial output.
+Updates command arrays, transmits commands over Serial1, and refreshes LCD when telemetry arrives.
 Dependencies:
-Top-side packet format must match parse_command_msg().
+myusb.Task(), PrintDeviceListChanges(), command generation, and telemetry parsing must run regularly.
 Notes:
-No behavior changes were made; comments clarify the existing pipeline only.
+Manual control, slow mode, slew limiting, and depth hold are evaluated before packet generation.
 */
 void loop() {    
  // unsigned long mics = micros();
