@@ -28,6 +28,7 @@ Revision history
 2024-05-31 DF  Fixed USB declarations to compile with TeensyDuino 1.59
 2024-06-02 DF  Ver 1.20 - Added USB ID display at startup
 2024-06-09 DF  Ver 1.21 - added temp readout enable to Y button
+2026-06-04 DF  Ver 1.30 - Added slew and slow mode toggle
 
 Known bugs:
 
