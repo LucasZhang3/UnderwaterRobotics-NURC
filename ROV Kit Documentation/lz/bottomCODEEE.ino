@@ -53,6 +53,9 @@
 #define GRIP1_PIN 9
 #define GRIP2_PIN 10
 #define SERVO1_PIN 21
+// SERVO 1 is camera
+// #define SERVO1_PIN 17 on robot 2
+
 #define DIM_PIN 22
 
 #define SDA0_PIN 18
