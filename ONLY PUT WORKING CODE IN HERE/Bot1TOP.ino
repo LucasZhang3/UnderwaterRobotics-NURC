@@ -153,9 +153,9 @@ float motDirs[NMOTORS];
 // Motor gain trims
 // Adjust these to get it to drive straight
 // and to have the desired steering and strafing behavior
-float DriveGainL  = 0.50;
+float DriveGainL  = 0.60;
 float DriveGainR  = 0.60;
-float SteerGain   = -0.60;
+float SteerGain   = -0.50;
 float DiveGainL   = 0.60;    // reducing total current draw
 float DiveGainR   = 0.60;
 float StrafeGain  = 0.50;
