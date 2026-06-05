@@ -67,7 +67,7 @@ float depthMeters;  // should be depth in meters
 
 // these things each start at 0 for the special case
 #define NMOTORS 6		// max number of motor control channels
-#define NSERVOS 3		// max number of servo control channels
+#define NSERVOS 2		// max number of servo control channels
 #define NSWITCHES 2		// must match top-side S section in command packet
 #define NVOLTS 6		// max number of analog channels sent
 
