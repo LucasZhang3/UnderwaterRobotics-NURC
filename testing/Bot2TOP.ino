@@ -132,11 +132,15 @@ extern "C" uint32_t set_arm_clock(uint32_t frequency); // required prototype
 #define DEPTH_FILTER_ALPHA 0.10
 #define TELEMETRY_TIMEOUT_MS 1000
 #define DEPTH_DISPLAY_OFFSET_FT 44.0f
-#define DPAD_AXIS_STEP 0.03f       // Step per loop for D-pad LED/camera synthesized axes.
+#define DPAD_AXIS_STEP 0.03f       // Step per loop for D-pad LED synthesized axis.
+#define CAMERA_DPAD_STEP 0.12f     // Faster step for camera (3.3 V pin — reach limits quickly).
+#define CAMERA_DPAD_SNAP 1         // 1 = D-pad Up/Down jumps to full command immediately.
 #define DEPTH_PRESSURE_V_MIN 0.05f // Reject depth telemetry below this sensor voltage.
 #define DEPTH_PRESSURE_V_MAX 3.25f // Reject depth telemetry above this sensor voltage.
 #define DEPTH_FEET_MIN -2.0f       // Plausible depth range for PID/display (feet).
 #define DEPTH_FEET_MAX 250.0f
+#define DEPTH_INTEGRAL_MAX 2.0f   // Anti-windup clamp for depth-hold integral term.
+#define CAMERA_TILT_ENABLED 0     // 0 while camera unplugged; set 1 when reconnected.
 // ----------------- Motor configuration ------------------ //
 
 // ESC to motor wiring as described in instructions
@@ -161,13 +165,14 @@ float motDirs[NMOTORS];
 // Motor gain trims
 // Adjust these to get it to drive straight
 // and to have the desired steering and strafing behavior
-float DriveGainL  = 0.50;
+float DriveGainL  = 0.60;
 float DriveGainR  = 0.60;
 float SteerGain   = 0.60;
 float DiveGainL   = 0.60;    // reducing total current draw
 float DiveGainR   = 0.60;
 float StrafeGain  = 0.50;
-float GripperGain = 0.50;   // to keep from breaking the plastic!
+float GripperGain = 0.35;   // reduced + bottom slew limits claw inrush current
+#define GRIPPER_SLEW_STEP 0.025f
 
 // make the fast LCD screen object - uses RW to allow readback of screen contents
 LiquidCrystalFast lcd(LCD_RS, LCD_RW, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7);
@@ -274,6 +279,7 @@ int dn_button[NANALOG] = {0,0,0,0,0,0,0,0,XButton,AButton};
 float button_inc = DPAD_AXIS_STEP;
 
 static int activeGamepadIndex = -1;
+static float gripperCmd = 0.0f;
 
 // these are sent to the ROV
 int motors[NMOTORS];    // motor command values 0=full reverse, FF=full fwd
@@ -490,10 +496,17 @@ void updateVirtualPadAxes(void) {
   if (val < -1.0f) val = -1.0f;
   analogs[DPadX] = val;
   val = analogs[DPadY];
-  if (dUp) val += button_inc;
-  if (dDown) val -= button_inc;
+#if CAMERA_TILT_ENABLED
+#if CAMERA_DPAD_SNAP
+  if (dUp) val = 1.0f;
+  else if (dDown) val = -1.0f;
+#else
+  if (dUp) val += CAMERA_DPAD_STEP;
+  if (dDown) val -= CAMERA_DPAD_STEP;
   if (val > 1.0f) val = 1.0f;
   if (val < -1.0f) val = -1.0f;
+#endif
+#endif
   analogs[DPadY] = val;
   for (int i = ButsX; i < NANALOG; i++) {
     val = analogs[i];
@@ -607,6 +620,7 @@ void updateDepthHoldAssist(float dtSeconds) {
   float error = targetDepthMeters - filteredDepthMeters;
   if (abs(error) < DEPTH_HOLD_DEADBAND) error = 0.0;
   depthIntegral += error * dtSeconds;
+  depthIntegral = constrainFloat(depthIntegral, -DEPTH_INTEGRAL_MAX, DEPTH_INTEGRAL_MAX);
   float derivative = 0.0;
   if (dtSeconds > 0.0) derivative = (error - previousDepthError) / dtSeconds;
   depthPidOutput = error * DEPTH_KP + depthIntegral * DEPTH_KI + derivative * DEPTH_KD;
@@ -623,7 +637,9 @@ void applySlewRate(float dtSeconds) {
   analogs[LJoyY] = limitRateOfChange(analogs[LJoyY], requestedAnalogs[LJoyY] * scale, accelRate, decelRate, dtSeconds);
   analogs[LJoyX] = limitRateOfChange(analogs[LJoyX], requestedAnalogs[LJoyX] * scale, accelRate, decelRate, dtSeconds);
   analogs[RJoyX] = limitRateOfChange(analogs[RJoyX], requestedAnalogs[RJoyX] * scale, accelRate, decelRate, dtSeconds);
-  analogs[RJoyY] = limitRateOfChange(analogs[RJoyY], requestedAnalogs[RJoyY] * scale, accelRate, decelRate, dtSeconds);
+  if (!depthHoldEnabled) {
+    analogs[RJoyY] = limitRateOfChange(analogs[RJoyY], requestedAnalogs[RJoyY] * scale, accelRate, decelRate, dtSeconds);
+  }
 }
 
 // read gamepad and populate the control variables with current readings
@@ -708,21 +724,29 @@ void translate_controls_to_commands() {
   float Strafe    = analogs[LJoyX]*StrafeGain;
   float LUpDown   = analogs[RJoyY]*DiveGainL;
   float RUpDown   = analogs[RJoyY]*DiveGainR;
-  // gripper uses both of the triggers
-  float Gripper   = (analogs[RTrig] - analogs[LTrig])*GripperGain;
+  // gripper uses both of the triggers (slew-limited to reduce bottom brownout)
+  float Gripper   = (analogs[RTrig] - analogs[LTrig]) * GripperGain;
+  float gripDelta = Gripper - gripperCmd;
+  if (gripDelta > GRIPPER_SLEW_STEP) gripperCmd += GRIPPER_SLEW_STEP;
+  else if (gripDelta < -GRIPPER_SLEW_STEP) gripperCmd -= GRIPPER_SLEW_STEP;
+  else gripperCmd = Gripper;
 
   // calculate motor speed for each motor output
   // Also limit the values to valid PWM range 
-  motors[GripperMot] = Pwm0 + lims((int)(Gripper  *motDirs[GripperMot]*motScale));
+  motors[GripperMot] = Pwm0 + lims((int)(gripperCmd * motDirs[GripperMot] * motScale));
   motors[LUpDownMot] = Pwm0 + lims((int)(LUpDown  *motDirs[LUpDownMot]*motScale));
   motors[RUpDownMot] = Pwm0 + lims((int)(RUpDown  *motDirs[RUpDownMot]*motScale));
   motors[LForAftMot] = Pwm0 + lims((int)(LRForeAft*motDirs[LForAftMot]*motScale));
   motors[RForAftMot] = Pwm0 + lims((int)(RRForeAft*motDirs[RForAftMot]*motScale));
   motors[StrafeMot ] = Pwm0 + lims((int)(Strafe   *motDirs[StrafeMot ]*motScale));
 
-  // servos[0]=LED dim, servos[1]=camera tilt analog; claw uses motors[0] on bottom pin 21
+  // servos[0]=LED dim; servos[1]=camera (disabled when CAMERA_TILT_ENABLED 0)
   servos[0] = Pwm0 + lims((int)((analogs[DPadX]) * motScale));  // LED dimming
+#if CAMERA_TILT_ENABLED
   servos[1] = Pwm0 + lims((int)(-(analogs[DPadY]) * motScale));  // camera tilt
+#else
+  servos[1] = Pwm0;
+#endif
 }
 
 
