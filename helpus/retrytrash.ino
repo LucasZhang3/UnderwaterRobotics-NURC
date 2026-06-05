@@ -306,7 +306,7 @@ float telems[NVOLTS];     // telemetry in its units
 //    signal              tether   ana1   ana2    ana3    ana4    press
 //    measurement         Battery  H2Otemp not  LEDtemp   ---    Depth
 //    units                Volts    degC   used   degC    --      Feet
-float telZeros[NVOLTS] = {   0.00,  0.00,  0.10,   1.40,   1.40,  0.00};
+float telZeros[NVOLTS] = {   0.00,  0.00,  0.10,   1.40,   1.40,  0.49};
 float telScale[NVOLTS] = {  11.00,  256./3.3,  8.00,  70.00,  71.00, 90};
 
 /*
@@ -1021,6 +1021,7 @@ void translate_controls_to_commands() {
   // the servos use the D pad buttons for camera tilt and brightness
   servos[0] = Pwm0 + lims((int)(analogs[DPadX] * motScale));  // LED dimming
   servos[1] = Pwm0 + lims((int)(-analogs[DPadY] * motScale));  // camera tilt servo
+  // servos[2] = Pwm0 + lims((int)(Gripper  *motDirs[GripperMot]*motScale)); // Gripper
 }
 
 
@@ -1038,7 +1039,7 @@ Dependencies:
 Bottom-side parser must use the same packet field order and widths.
 Notes:
 Protocol fields were not changed by this documentation pass.
-*/
+*/// build a command string for ROV
 void build_command_msg(char *msg) {
   int i, checksum = 0;
 
