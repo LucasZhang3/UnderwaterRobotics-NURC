@@ -124,8 +124,8 @@ extern "C" uint32_t set_arm_clock(uint32_t frequency); // required prototype
 #define DEPTH_HOLD_ACTIVATION_DELAY_MS 500 // Delay after stick release before capturing target depth.
 #define DEPTH_HOLD_DEADBAND 0.15  // Feet of allowed depth error before PID correction begins.
 #define MAX_VERTICAL_PID_OUTPUT 0.35 // Maximum automatic vertical command from depth hold.
-#define DEPTH_KP 0.45               // Proportional correction for depth error in feet.
-#define DEPTH_KI 0.02               // Integral correction for persistent depth error.
+#define DEPTH_KP 0.3               // Proportional correction for depth error in feet.
+#define DEPTH_KI 0.04               // Integral correction for persistent depth error.
 #define DEPTH_KD 0.10               // Derivative damping for depth-rate changes.
 #define DEPTH_UNITS_SCALE 1.0  // Depth telemetry is already scaled to feet by telScale[5].
 #define DEPTH_FILTER_ALPHA 0.10     // Low-pass filter weight for new depth samples.
