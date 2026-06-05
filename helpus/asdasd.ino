@@ -96,7 +96,7 @@ extern "C" uint32_t set_arm_clock(uint32_t frequency); // required prototype
 // max number of motor control channels in command message
 #define NMOTORS 6
 // max number of servo control channels in command message
-#define NSERVOS 3
+#define NSERVOS 2
 // max number of switch channels in command message
 #define NSWITCHES 2
 // max number of analog channels in reply message
@@ -583,7 +583,7 @@ void translate_controls_to_commands() {
   // the servos use the D pad buttons for camera tilt and brightness
   servos[0] = Pwm0 + lims((int)((analogs[DPadX]+1) * motScale));  // LED dimming
   servos[1] = Pwm0 + lims((int)(-(analogs[DPadY]+1) * motScale));  // camera tilt servo
-  servos[2] = Pwm0 + lims((int)(Gripper  *motDirs[GripperMot]*motScale)); // Gripper
+  // servos[2] = Pwm0 + lims((int)(Gripper  *motDirs[GripperMot]*motScale)); // Gripper
 }
 
 
