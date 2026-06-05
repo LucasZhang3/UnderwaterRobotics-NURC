@@ -67,7 +67,7 @@ float depthMeters;  // should be depth in meters
 
 // these things each start at 0 for the special case
 #define NMOTORS 6		// max number of motor control channels
-#define NSERVOS 2   	// match top-side P section field count
+#define NSERVOS 3   	// match top-side P section field count
 #define NSWITCHES 2		// match top-side S section field count
 #define NVOLTS 6		// max number of analog channels sent
 
@@ -85,8 +85,8 @@ float depthMeters;  // should be depth in meters
 #define MOTOR5_PIN   7
 #define GRIP1_PIN    9
 #define GRIP2_PIN   10
-#define SERVO1_PIN  17 // used to be 21
-// #define SERVO2_PIN  21
+#define SERVO1_PIN  17
+#define SERVO2_PIN  21
 #define DIM_PIN     22
 
 // I2C bus
@@ -131,7 +131,7 @@ Servo motor4;
 Servo motor5;  
 
 Servo servo1;
-// Servo servo2;
+Servo servo2;
 
 char inString[100];          // where the received data link string goes
 char inChr = 0;              // the receive char is built here
@@ -419,7 +419,9 @@ void applyActuatorCommands(void) {
   motor3.writeMicroseconds(motor_scale(motors[3]));
   motor4.writeMicroseconds(motor_scale(motors[4]));
   motor5.writeMicroseconds(motor_scale(motors[5]));
-  // servo2.writeMicroseconds(servo_scale(servos[2]));
+	
+  servo2.writeMicroseconds(servo_scale(servos[2]));
+
   grip = motors[0] - 128;
   if (grip < 0) {
     grip2 = 1 + grip * 2;
@@ -431,6 +433,7 @@ void applyActuatorCommands(void) {
   // analogWrite(GRIP1_PIN, grip1);
   // analogWrite(GRIP2_PIN, grip2);
   analogWrite(DIM_PIN, servos[0]);
+	// idk what this is doing
   analogWrite(SERVO1_PIN, servos[1]);
 }
 
@@ -454,9 +457,12 @@ void setup() {
   Serial.begin(115200);            // debug monitor port
   Serial1.begin(115200);             // tether port
   Serial1.transmitterEnable(TXE_PIN);   // RS-485 Tx enable  
-  pinMode(GRIP1_PIN, OUTPUT);        // gripper pins are always driven
-  pinMode(GRIP2_PIN, OUTPUT);        // gripper pins are always driven
+  
   pinMode(DIM_PIN, OUTPUT);        // the LED PWM pin is always driven
+
+	// i am adding this for the camera servo for now
+  pinMode(SERVO1_PIN, OUTPUT);        // camera pins are always driven
+  // pinMode(SERVO2_PIN, OUTPUT);        // gripper pins are always driven
   analogReadResolution(12);        // use all the bits of the ADC
 
   // attaches the servo on pin to the servo object. These are named for the 
@@ -468,7 +474,7 @@ void setup() {
   motor4.attach(MOTOR4_PIN);  
   motor5.attach(MOTOR5_PIN);  
   servo1.attach(SERVO1_PIN);  
-  // servo2.attach(SERVO2_PIN);
+  servo2.attach(SERVO2_PIN);
 
   for (int i = 0; i < NMOTORS; i++) motors[i] = Pwm0;
   for (int i = 0; i < NSERVOS; i++) servos[i] = Pwm0;
