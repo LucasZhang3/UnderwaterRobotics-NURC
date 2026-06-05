@@ -283,7 +283,7 @@ float telems[NVOLTS];     // telemetry in its units
 //    signal              tether   ana1   ana2    ana3    ana4    press
 //    measurement         Battery  H2Otemp not  LEDtemp   ---    Depth
 //    units                Volts    degC   used   degC    --      Feet
-float telZeros[NVOLTS] = {   0.00,  0.00,  0.10,   1.40,   1.40,  0.4889};
+float telZeros[NVOLTS] = {   0.00,  0.00,  0.10,   1.40,   1.40,  0.4889}; // might be 0.5V instead
 float telScale[NVOLTS] = {  11.00,  256./3.3,  8.00,  70.00,  71.00, 90};
 
 void display_all_telems(void) {
