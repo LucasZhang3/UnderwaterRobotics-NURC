@@ -27,6 +27,8 @@ Revision history
 2023-11-19 DF  RVCBOT-C version has only 6 motors, tilt, dim
 2024-02-22 DF  Adding pressure to telem message
 
+2026-06-05 DF  Added servo for claw
+
 Functions:
  6 PWM motor outputs
  2 PWM servo outputs
@@ -51,8 +53,6 @@ The values transmitted are the raw ADC values.
 
 Things to do:
 
-3. Add better comm. error handling
-4. Devise a way to test error handling
 */
 
 //------------ INCLUDES AND LIBRARIES ------------------------------- //
@@ -370,6 +370,7 @@ int claw_servo_scale(int cmd) {
 Servo cameraServo;
 #endif
 
+//Code for Claw is seperate from the thrusters and camera servo but works in a similar manner
 static int clawCurrentUs = 1500;
 
 void writeClawServoUs(int pulseUs) {
@@ -394,6 +395,7 @@ void applyClawOutput(int cmd) {
   if (delta < -CLAW_MAX_US_STEP) delta = -CLAW_MAX_US_STEP;
   writeClawServoUs(clawCurrentUs + delta);
 }
+//
 
 void initCameraTiltOutput(void) {
 #if CAMERA_TILT_ENABLED
