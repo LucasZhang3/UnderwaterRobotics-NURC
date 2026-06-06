@@ -52,6 +52,10 @@ Ideally there should be no roll
 It could be useful to add a hold for pitch, but that might require different placement of the strafing motor
 PID for Yaw would make the robot drive straight
 
+If using multiple ROVs, it could also be possible to only use one Top controller for multiple ROVs
+Though the benefits may not worth the effort needed to achieve it
+It is usually also better to have different drivers for different ROVs
+
 Function:
 
 Uses an XBox One gamepad to run an ROV
