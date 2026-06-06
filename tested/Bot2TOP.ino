@@ -39,6 +39,19 @@ Things to do:
 
 Calibrate temp sensors
 
+Things you can add:
+
+Instead of using PID to hold depth, you can do a feed forward system which may be more stable
+Considering that there isn't a lot of current in the pools
+You can simply calculate the bouyancy force, pVg, and have the thrusters account for the constant force
+Or you can even use both, with feedforward as the baseline and PID to account for the environment
+
+If hardware allows, you can add an IMU and use the measurements from the gyroscope.
+Through this, you can add PID for 3 more degrees of freedom: roll pitch and yaw
+Ideally there should be no roll
+It could be useful to add a hold for pitch, but that might require different placement of the strafing motor
+PID for Yaw would make the robot drive straight
+
 Function:
 
 Uses an XBox One gamepad to run an ROV
