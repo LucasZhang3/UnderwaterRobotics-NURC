@@ -4,20 +4,28 @@ NURC ROV firmware is split across four Arduino sketches on Teensy 4.x boards: tw
 
 ## High-Level Topology
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  TOP SIDE (Control Box)                                     │
-│  Teensy 4.x + Xbox One Gamepad (USB Host) + 4×20 LCD        │
-│  Bot1Top.ino  OR  Bot2Top.ino                               │
-└───────────────────────────┬─────────────────────────────────┘
-                            │ RS-485 @ 115200 baud
-                            │ RJ45 tether (one twisted pair)
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│  BOTTOM SIDE (Vehicle)                                      │
-│  Teensy 4.0 + ESCs + sensors + actuators                    │
-│  Bot1Bottom.ino  OR  Bot2Bottom.ino                         │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+  subgraph TOP["Top Side · Control Box"]
+    direction TB
+    T1["Teensy 4.x"]
+    T2["Xbox One gamepad · USB Host"]
+    T3["4×20 LCD"]
+    T4["Bot1Top.ino or Bot2Top.ino"]
+  end
+
+  subgraph LINK["Tether"]
+    RS["RS-485 · 115200 baud<br/>RJ45 · one twisted pair"]
+  end
+
+  subgraph BOTTOM["Bottom Side · Vehicle"]
+    direction TB
+    B1["Teensy 4.0"]
+    B2["ESCs · sensors · actuators"]
+    B3["Bot1Bottom.ino or Bot2Bottom.ino"]
+  end
+
+  TOP --> LINK --> BOTTOM
 ```
 
 ## Subsystem Responsibilities
@@ -41,13 +49,22 @@ NURC ROV firmware is split across four Arduino sketches on Teensy 4.x boards: tw
 
 ## Data Flow
 
-```
-Gamepad → analogs[] → motors[]/servos[]/switches[] → command packet
-                                                          │
-                                                          ▼
-Pressure/battery/temp ADCs ← volts[] ← parse ← reply packet
-       │
-       └──► (BOT2 top) filtered depth → PID → vertical thruster command
+```mermaid
+flowchart TB
+  GP[Gamepad input] --> AN[analogs array]
+  AN --> MIX[motors · servos · switches]
+  MIX --> CMD[Command packet M…P…S…C]
+  CMD -->|RS-485 downlink| BOT[Bottom firmware]
+
+  BOT --> ADC[ADC sampling]
+  ADC --> VOL[volts array]
+  VOL --> REPLY[Reply packet V…]
+  REPLY -->|RS-485 uplink| PARSE[parse_reply_msg]
+
+  PARSE --> LCD[LCD telemetry display]
+  PARSE --> PID["BOT2 only: filtered depth → PID"]
+  PID --> RY[analogs RJoyY override]
+  RY --> MIX
 ```
 
 ## BOT1 vs BOT2 Architectural Split

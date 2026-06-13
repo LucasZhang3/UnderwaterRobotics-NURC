@@ -4,12 +4,19 @@ Operator control flows from an **Xbox One gamepad** through top-side mixing logi
 
 ## Controller Input Flow
 
-```
-USB Host → JoystickController → axes[6], butts
-         → joyScale / trigScale → analogs[0..9]
-         → (BOT2) requestedAnalogs + slew + depth hold
-         → translate_controls_to_commands()
-         → motors[], servos[], switches[]
+```mermaid
+flowchart TD
+  USB[USB Host] --> JC[JoystickController]
+  JC --> RAW[axes 0-5 · button word]
+  RAW --> SCALE[joyScale · trigScale]
+  SCALE --> AN[analogs 0-9]
+
+  AN --> BOT2["BOT2: requestedAnalogs<br/>slew limits · depth hold"]
+  BOT2 --> TCC[translate_controls_to_commands]
+  AN --> TCC
+
+  TCC --> OUT[motors · servos · switches]
+  OUT --> TX[RS-485 command packet]
 ```
 
 Main loop rate: **20 Hz** (`loopPeriod = 50000` µs).

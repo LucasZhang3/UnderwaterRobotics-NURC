@@ -4,15 +4,20 @@ Telemetry travels from bottom-side ADC sampling to top-side LCD display through 
 
 ## Telemetry Pipeline
 
-```
-analogRead (bottom, 12-bit)
-    → exponential smooth (80/100 blend)
-    → volts[] raw counts
-    → build_reply_msg() → 6 × 3 hex digits
-    → RS-485 to top
-    → parse_reply_msg() → float volts[6]
-    → telZeros/telScale → engineering units
-    → LCD
+```mermaid
+flowchart TD
+  A["analogRead · bottom · 12-bit"] --> S["Exponential smooth · 80/100 blend"]
+  S --> V[volts raw counts]
+  V --> B[build_reply_msg]
+  B --> H["6 channels × 3 hex digits"]
+  H --> RS[RS-485 uplink]
+  RS --> P[parse_reply_msg]
+  P --> F["float volts 0-5"]
+  F --> E[telZeros · telScale]
+  E --> L[LCD engineering units]
+
+  F --> D["BOT2: depth filters · validity check"]
+  D --> PID[Depth hold PID]
 ```
 
 ## Reply Packet Encoding

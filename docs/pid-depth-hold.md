@@ -4,11 +4,15 @@ Depth hold runs **entirely on the top-side** (`Bot2Top.ino`). The bottom side on
 
 ## Architecture
 
-```
-Pressure ADC (bottom) → V packet → parse_reply_msg()
-    → depthFeetFromPressureVolts() → EMA filters
-    → updateDepthHoldAssist() → analogs[RJoyY]
-    → translate_controls_to_commands() → vertical thrusters
+```mermaid
+flowchart LR
+  ADC["Pressure ADC · bottom"] --> VP[V telemetry packet]
+  VP --> PR[parse_reply_msg]
+  PR --> DF["depthFeetFromPressureVolts<br/>EMA filters"]
+  DF --> UH[updateDepthHoldAssist]
+  UH --> RY[analogs RJoyY]
+  RY --> TC[translate_controls_to_commands]
+  TC --> VT[Vertical thrusters]
 ```
 
 PID output is injected as the right-stick vertical analog **before** thruster mixing.
@@ -30,6 +34,20 @@ When the operator releases the vertical stick:
 4. `depthHoldEnabled = true`; LCD PID line updated.
 
 Manual stick input immediately calls `disableDepthHold()`.
+
+```mermaid
+stateDiagram-v2
+  [*] --> ManualControl: operator flying
+  ManualControl --> StickReleased: vertical stick near center
+  StickReleased --> ActivationWait: 750 ms delay
+  ActivationWait --> DepthHold: target depth captured
+  DepthHold --> ManualControl: stick override
+  DepthHold --> ManualControl: bad telemetry
+  DepthHold --> ManualControl: gamepad disconnect
+  DepthHold --> ManualControl: telemetry timeout
+  StickReleased --> ManualControl: stick override
+  ActivationWait --> ManualControl: stick override
+```
 
 ## Depth Estimation
 

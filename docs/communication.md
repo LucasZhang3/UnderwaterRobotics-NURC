@@ -10,7 +10,21 @@ Top-side and bottom-side firmware exchange **ASCII hex** packets over **RS-485**
 
 ## Command Packet (Top → Bottom)
 
-Format:
+Packet layout:
+
+```mermaid
+flowchart LR
+  M[M] --> motors["6 × motor bytes"]
+  motors --> P[P]
+  P --> servos["2 × servo bytes"]
+  servos --> S[S]
+  S --> sw["2 × switch bits"]
+  sw --> C[C]
+  C --> chk[Checksum mod 256]
+  chk --> nl[Newline]
+```
+
+Format string:
 
 ```
 M<12 hex digits>P<4 hex digits>S<2 hex digits>C<2 hex checksum>\n\0
@@ -58,7 +72,15 @@ Checksum: `(0x80×6 + 0x80×2 + 0×2) % 256 = 0x80`.
 
 ## Reply Packet (Bottom → Top)
 
-Format:
+Packet layout:
+
+```mermaid
+flowchart LR
+  V[V] --> ch["6 × ADC channels"]
+  ch --> nl[Newline]
+```
+
+Format string:
 
 ```
 V<18 hex digits>\n\0
@@ -86,6 +108,25 @@ V<18 hex digits>\n\0
 Top converts hex to volts: `volts[i] = val × 3.3 / 4096`.
 
 ## Transaction Sequence
+
+```mermaid
+sequenceDiagram
+  participant Top as Top Side
+  participant Bus as RS-485 Tether
+  participant Bot as Bottom Side
+
+  loop Every 50 ms · 20 Hz
+    Top->>Bus: Command packet M…P…S…C
+    Bus->>Bot: Assemble bytes until newline
+    Bot->>Bus: Reply packet V… telemetry
+    Bus->>Top: Telemetry line
+    Note over Top: BOT2 parses telem before next command
+    Bot->>Bot: parse_command_msg
+    Note over Bot: Actuators update on valid parse
+  end
+```
+
+Steps in plain language:
 
 1. Top sends command at 20 Hz (every 50 ms).
 2. Bottom receives bytes until `\n`, null-terminates buffer.

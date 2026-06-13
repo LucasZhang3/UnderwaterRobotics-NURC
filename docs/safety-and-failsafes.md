@@ -49,10 +49,16 @@ BOT2 top and bottom reset receive pointer if buffer would exceed `sizeof(msg) - 
 
 `disableDepthHold()` runs when:
 
-1. Gamepad disconnects
-2. Depth telemetry invalid or out of range
-3. Telemetry timeout (> 1 s)
-4. Vertical stick |command| > 5%
+```mermaid
+flowchart TD
+  HOLD[Depth hold active] --> Q{Safety gate}
+  Q -->|Vertical stick > 5%| OFF[disableDepthHold]
+  Q -->|Invalid or out-of-range depth| OFF
+  Q -->|No valid telemetry > 1000 ms| OFF
+  Q -->|Gamepad disconnected| OFF
+  Q -->|All checks pass| HOLD
+  OFF --> RESET[Reset PID state · return to manual]
+```
 
 Disengagement resets integral, derivative state, and hold output.
 

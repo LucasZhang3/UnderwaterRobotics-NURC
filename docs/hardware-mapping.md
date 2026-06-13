@@ -35,7 +35,14 @@ ESC pulse mapping (`motor_scale`):
 | 128 | 1500 µs (neutral) |
 | 255 | 1100 µs |
 
-Startup sequence: 7 s @ 1500 µs → 1 s @ 1600 µs → 1500 µs.
+Startup sequence (BlueRobotics ESC arming):
+
+```mermaid
+flowchart LR
+  A["7 s · 1500 µs neutral"] --> B["1 s · 1600 µs forward"]
+  B --> C["1500 µs neutral"]
+  C --> D[Ready for commands]
+```
 
 ## Bottom Side: BOT1 Actuators
 
