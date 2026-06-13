@@ -162,7 +162,7 @@ The mission claw went through several mechanical revisions before competition. T
 | Team design document | [Google Drive PDF](https://drive.google.com/file/d/1L6_iDUZlUk_yECLHYrSY6R8Uuk5SJSd_/view) |
 | Engineering notebook | [Google Drive PDF](https://drive.google.com/file/d/14MQay8u6-zPsZq1d81uaRiCIRHpb4kXX/view) |
 | Competition trailer | [YouTube](https://www.youtube.com/watch?v=rPA1AVYUPB4) |
-| Competition video | [YouTube]([https://www.youtube.com/watch?v=rPA1AVYUPB4](https://www.youtube.com/watch?t=2877&v=SjvaYA--C2E)) |
+| Competition video | [YouTube](https://www.youtube.com/watch?t=2877&v=SjvaYA--C2E) |
 | Event webcast | [nurc.us/webcast](https://www.nurc.us/webcast) |
 
 ---
