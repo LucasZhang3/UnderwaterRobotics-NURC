@@ -1,9 +1,11 @@
-# NURC Underwater ROV
-
-**Built at the ASU Underwater Robotics Camp, competed at the National Underwater Robotics Challenge**
+<h1 align="center">NURC Underwater ROV</h1>
+<p align="center">
+  <strong>Built at the ASU Underwater Robotics Camp, competed at the National Underwater Robotics Challenge</strong><br>
+  Arizona State University · ASU Underwater Robotics Camp
+</p>
 
 <p align="center">
-  <img src="assets/TeamProto/Prototype_2.png" alt="Fully assembled competition ROV with claw and thrusters" width="480">
+  <img src="assets/TeamProto/teamphotomain.png" alt="Fully assembled competition ROV with claw and thrusters" width="480">
 </p>
 <p align="center"><em>Our competition ROV after camp build-out: frame, claw, thrusters, and tether.</em></p>
 
