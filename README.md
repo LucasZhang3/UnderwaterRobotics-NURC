@@ -21,13 +21,12 @@ This repository holds the firmware, documentation, and build media for the robot
 
 Our team came together through the [ASU Underwater Robotics Camp](https://eoss.asu.edu/summer-program/asu-underwater-robotics-camp), a week-long program hosted by Arizona State University's Fulton Schools of Engineering at the **Polytechnic campus** (June 2-7, 2026).
 
-The camp is built around doing, not just listening. Over several days we worked alongside other high school students to **design, wire, program, and test** a real underwater robot. Faculty and mentors guided us through buoyancy, electrical systems, controls, and how to think like engineers when something fails in the pool. We also connected with **Desert WAVE**, ASU's top-ranked underwater robotics team, and saw what competitive ROV work looks like at a high level.
+Over the week we worked alongside other high school students to **design, wire, program, and test** a real underwater robot. Faculty and mentors guided us through buoyancy, electrical systems, controls, and how to think like engineers when something fails in the pool. We also connected with **Desert WAVE**, ASU's top-ranked underwater robotics team, and saw what competitive ROV work looks like at a high level.
 
-By the end of the week we had a vehicle we understood inside and out, and we carried that robot straight into competition weekend.
 
 ### The National Underwater Robotics Challenge
 
-[NURC](https://www.nurc.us/) is a student underwater robotics competition held in Arizona. Teams pilot tethered ROVs in a mission pool, complete task-based runs, and explain their engineering choices to judges. The event blends **hands-on driving**, **manipulation**, and **documentation**, so success depends on both the robot and the team behind it.
+[NURC](https://www.nurc.us/) is a student underwater robotics competition held in Arizona. Teams pilot tethered ROVs in a mission pool, complete task-based runs, and explain their engineering choices to judges.
 
 **2026 theme: Duckie Disaster.** The mission scenario is a simulated Pacific maritime emergency. Teams deploy their ROVs to:
 
