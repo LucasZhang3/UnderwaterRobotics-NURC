@@ -15,7 +15,7 @@ This repository holds the firmware, documentation, and build media for the robot
 
 ---
 
-## Where This Project Started
+## Where This Project Started 
 
 ### ASU Underwater Robotics Camp
 
