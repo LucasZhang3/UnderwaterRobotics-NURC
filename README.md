@@ -176,6 +176,6 @@ The mission claw went through several mechanical revisions before competition. T
 
 ---
 
-## Attribution
+## Attribution 
 
 Firmware derives from ROVotron Cadet programs (C) David Forbes, 2010, 2023-2024. Team adaptations are documented in sketch revision histories.
