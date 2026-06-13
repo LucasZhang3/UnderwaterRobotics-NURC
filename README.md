@@ -133,7 +133,6 @@ The mission claw went through several mechanical revisions before competition. T
 | `docs/` | Architecture, controls, safety, and hardware reference |
 | `assets/` | Team photos, renders, claw build photos, schematics |
 
-This project continues work begun in the [UnderwaterRobotics-Camp-2026](https://github.com/sophie-boyce/UnderwaterRobotics-Camp-2026) camp repository. Earlier commits record prototypes and iteration; this tree is the competition baseline.
 
 ---
 
